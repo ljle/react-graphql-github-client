@@ -9,33 +9,65 @@ const App = () => {
   const [path, setPath] = useState(
     'the-road-to-learn-react/the-road-to-learn-react'
   )
-  const [organization, setOrganization] = useState('the-road-to-learn-react')
+  const [organization, setOrganization] = useState(null)
   const [errors, setErrors] = useState(null)
 
   /* Query API to get issues of repository */
-  const getIssuesOfRepository = path => {
+  const getIssuesOfRepository = (path, cursor) => {
     const [organization, repository] = path.split('/')
 
     return axios.post('', {
       query: GET_ISSUES_OF_REPOSITORY,
-      variables: { organization, repository }
+      variables: { organization, repository, cursor }
     })
   }
 
   /* Update state with query results */
-  const resolveIssuesQuery = queryResult => {
+  const resolveIssuesQuery = (queryResult, cursor) => {
     const {
       data: {
-        data: { organization },
+        data: { organization: organizationResult },
         errors
       }
     } = queryResult
-    setOrganization(organization)
+
+    if (!cursor) {
+      setOrganization(organizationResult)
+    } else {
+      const { edges: oldIssues } = organization.repository.issues
+      const { edges: newIssues } = organizationResult.repository.issues
+      const updatedIssues = [...oldIssues, ...newIssues]
+
+      setOrganization({
+        ...organizationResult,
+        repository: {
+          ...organizationResult.repository,
+          issues: {
+            ...organizationResult.repository.issues,
+            edges: updatedIssues
+          }
+        }
+      })
+    }
     setErrors(errors)
   }
 
-  const onFetchFromGitHub = path => {
-    getIssuesOfRepository(path).then(resolveIssuesQuery)
+  const onFetchFromGitHub = (path, cursor) => {
+    getIssuesOfRepository(path, cursor).then(result =>
+      resolveIssuesQuery(result, cursor)
+    )
+  }
+
+  const onFetchMoreIssues = () => {
+    const {
+      repository: {
+        issues: {
+          pageInfo: { endCursor }
+        }
+      }
+    } = organization
+
+    onFetchFromGitHub(path, endCursor)
   }
 
   const onSubmit = event => {
@@ -45,7 +77,7 @@ const App = () => {
 
   useEffect(() => {
     onFetchFromGitHub(path)
-  }, [setOrganization])
+  }, [setOrganization, setPath])
 
   return (
     <div>
@@ -63,7 +95,11 @@ const App = () => {
       </form>
       <hr />
       {organization ? (
-        <Organization organization={organization} errors={errors} />
+        <Organization
+          organization={organization}
+          errors={errors}
+          onFetchMoreIssues={onFetchMoreIssues}
+        />
       ) : (
         <p>No information yet ...</p>
       )}
